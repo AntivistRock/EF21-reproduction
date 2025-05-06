@@ -106,7 +106,7 @@ def init_processes(rank, size, fn, backend='gloo'):
 
 if __name__ == "__main__":
     size = 20
-    for lr_mult in [1, 32, 256, 512, 1024, 2048]:
+    for lr_mult in [1, 8, 16, 32, 64, 128]:
         experiment_config['lr_mult'] = lr_mult
         
         processes = []
