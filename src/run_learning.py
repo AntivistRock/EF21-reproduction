@@ -8,11 +8,14 @@ import torch.nn.functional as F
 
 import mlflow
 from math import ceil
+import time
 from torch.multiprocessing import Process
 from torch.autograd import Variable
 
 from optimizer.ef21 import EF21
+from optimizer.ef21plus import EF21Plus
 from data_utils.utils import partition_dataset
+from config import experiment_config
 
 
 class Net(nn.Module):
@@ -40,15 +43,15 @@ def run(rank, size):
     torch.manual_seed(1234)
     lr_config = {'top1': {'mushrooms': 0.002259, 'a9a': 0.003239}}
 
-    k = 1
-    dataset = 'a9a'
-    lr_mult = 1
-
+    dataset = experiment_config['dataset']
+    lr_mult = experiment_config['lr_mult']
+    k = experiment_config['k']
+    
     lr = lr_config[f'top{k}'][dataset] * lr_mult
 
     if dist.get_rank() == 0:
-        mlflow.set_experiment(f"EF21-stepsize-tolerance")
-        mlflow.start_run(run_name=f'EF:k={k}; {lr_mult}X')
+        mlflow.set_experiment(f"EF21Plus-stepsize-tolerance")
+        mlflow.start_run(run_name=f'EF21+:k={k}; {lr_mult}X')
         hyperparams = {
             "k": 1,
             "dataset": dataset,
@@ -60,9 +63,9 @@ def run(rank, size):
     model = Net()
     model = model
 #    model = model.cuda(rank)
-    optimizer = EF21(model.parameters(), lr=lr, k=k)
+    optimizer = EF21Plus(model.parameters(), lr=lr, k=k)
 
-    for epoch in range(100):
+    for epoch in range(1300):
         if rank == 0:
             optimizer.step()
             for param in model.parameters():
@@ -79,9 +82,6 @@ def run(rank, size):
                 epoch_loss += loss
                 loss.backward()
                 optimizer.step()
-            # print('Rank ',
-            #     dist.get_rank(), ', epoch ', epoch, ': ',
-            #     epoch_loss / num_batches)
         average_gradients(model)
 
         if dist.get_rank() == 0:
@@ -89,7 +89,7 @@ def run(rank, size):
             for param in model.parameters():
                 if type(param) is torch.nn.parameter.Parameter:
                     norm += param.grad.flatten().square().sum()
-            mlflow.log_metric('grad-norm', norm, step=epoch*20)
+            mlflow.log_metric('grad-norm', norm, step=epoch*32*k)
 
     if dist.get_rank() == 0:
         mlflow.end_run()
@@ -98,18 +98,21 @@ def run(rank, size):
 def init_processes(rank, size, fn, backend='gloo'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = '29503'
+    os.environ['MASTER_PORT'] = '29502'
     dist.init_process_group(backend, rank=rank, world_size=size)
     fn(rank, size)
 
 
 if __name__ == "__main__":
     size = 20
-    processes = []
-    for rank in range(size):
-        p = Process(target=init_processes, args=(rank, size, run))
-        p.start()
-        processes.append(p)
+    for lr_mult in [1, 32, 256, 512, 1024, 2048]:
+        experiment_config['lr_mult'] = lr_mult
+        
+        processes = []
+        for rank in range(size):
+            p = Process(target=init_processes, args=(rank, size, run))
+            p.start()
+            processes.append(p)
 
-    for p in processes:
-        p.join()
+        for p in processes:
+            p.join()
