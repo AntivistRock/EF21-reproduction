@@ -12,6 +12,7 @@ import time
 from torch.multiprocessing import Process
 from torch.autograd import Variable
 
+from optimizer.ef import EF
 from optimizer.ef21 import EF21
 from optimizer.ef21plus import EF21Plus
 from data_utils.utils import partition_dataset
@@ -50,8 +51,8 @@ def run(rank, size):
     lr = lr_config[f'top{k}'][dataset] * lr_mult
 
     if dist.get_rank() == 0:
-        mlflow.set_experiment(f"EF21Plus-stepsize-tolerance")
-        mlflow.start_run(run_name=f'EF21+:k={k}; {lr_mult}X')
+        mlflow.set_experiment(f"EF-stepsize-tolerance")
+        mlflow.start_run(run_name=f'EF:k={k}; {lr_mult}X')
         hyperparams = {
             "k": 1,
             "dataset": dataset,
@@ -63,7 +64,7 @@ def run(rank, size):
     model = Net()
     model = model
 #    model = model.cuda(rank)
-    optimizer = EF21Plus(model.parameters(), lr=lr, k=k)
+    optimizer = EF(model.parameters(), lr=lr, k=k)
 
     for epoch in range(1300):
         if rank == 0:
@@ -98,7 +99,7 @@ def run(rank, size):
 def init_processes(rank, size, fn, backend='gloo'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = '29502'
+    os.environ['MASTER_PORT'] = '29506'
     dist.init_process_group(backend, rank=rank, world_size=size)
     fn(rank, size)
 
